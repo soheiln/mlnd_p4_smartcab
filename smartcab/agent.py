@@ -12,13 +12,12 @@ class LearningAgent(Agent):
         self.color = 'red'  # override color
         self.planner = RoutePlanner(self.env, self)  # simple route planner to get next_waypoint
         # TODO: Initialize any additional variables here
-        Q_old = {}
+        self.Q = {}
+        self.QL_iterations = 100
 
     def reset(self, destination=None):
         self.planner.route_to(destination)
         # TODO: Prepare for a new trip; reset any variables here, if required
-        self.total_reward = 0
-        Q_old = {}
 
     def update(self, t):
         # Gather inputs
@@ -29,55 +28,56 @@ class LearningAgent(Agent):
         # Auxiliary variables
         # print "inputs: {}".format(inputs)
         can_go_left = (inputs['light'] == 'green' and inputs['oncoming'] == None)
-        can_go_right = (inputs['light'] == 'green') or (inputs['light'] = 'red' and inputs['oncoming'] == None)
+        can_go_right = (inputs['light'] == 'green') or (inputs['light'] == 'red' and inputs['oncoming'] == None)
         can_go_forward = (inputs['light'] == 'green')
         location = self.env.agent_states[self]['location']
         destination = self.planner.destination
         distance = self.env.compute_dist(location, destination)
 
+        delta_x = destination[0] - location[0]
+        delta_y = destination[1] - location[1]
+        delta = (delta_x, delta_y)
+
         # TODO: Update state
-        # s = (distance, deadline, next_waypoint, can_go_left, can_go_forward, can_go_right)
-        s = (next_waypoint, inputs, deadline - distance)
-        
+        s = (self.next_waypoint, inputs, deadline)
+
         # TODO: Select action according to your policy
-        # find optimal action
         optimal_action = random.choice(Environment.valid_actions)
-        q_max = Q_old[(s, optimal_action)]
+        q_max = Q[(s, optimal_action)]
         for a in Environment.valid_actions:
-            if Q_new(s,a) > q:
+            if Q[(s,a)] > q_max:
                 optimal_action = a
-                q_max = Q_new(s,a)
+                q_max = Q(s,a)
 
         # Execute action and get reward
         action = optimal_action
         reward = self.env.act(self, action)
 
         # TODO: Learn policy based on state, action, reward
-        # Initial population of Q_old
-        first_run = True #set to detect first iteration of Q-learning
 
         # Q-Learning Parameters
         self.learning_rate = 0.2
         self.discount_factor = 0.8
 
-        # Next states
-        next_states = []
-        optimal_future_value = # TODO: find max
-        new_state = # TODO: define new state
-        optimal_future_value = 0
-        for k in Q_old.keys():
-            s_ , a_ = k
-            if(s_ != new_state):
-                pass
-            if Q_old[(s_,a_)] > optimal_future_value
-                optimal_future_value = Q_old[(s_,a_)]
+        # calculating optimal future value for s(t+1) used in Q learning , in this case an expected value
+        # since future state is not deterministic and could have 2^8 = 256 outcomes
+        total_q = {}
+        for a in Environment.valid_actions:
+            total_q[a] = 0
+            for s_ in Q.keys():
+                if s_[3] != deadline-1:
+                    pass
+                else:
+                    total_q += Q[s_]
+            total_q[a] /= 256 # getting the expected value. there are 2^8 options for next_waypoint and inputs in the new state
+
+        optimal_future_value = max(total_q.values())
 
         q_old = 0
-        if( Q_old.has_key((s,a))):
-            q_old = Q_old[(s,a)]
+        if( Q.has_key((s,a)) ):
+            q_old = Q[(s,a)]
 
-        Q_new = copy.deepcopy(Q_old)
-        Q_new[(s, a)] = q_old + self.learning_rate * (reward + self.discount_factor * optimal_future_value - q_old)
+        Q[(s, a)] = q_old + self.learning_rate * (reward + self.discount_factor * optimal_future_value - q_old)
 
         print "LearningAgent.update(): deadline = {}, inputs = {}, action = {}, reward = {}".format(deadline, inputs, action, reward)  # [debug]
 
