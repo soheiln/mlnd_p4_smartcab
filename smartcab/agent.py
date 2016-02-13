@@ -16,6 +16,14 @@ class LearningAgent(Agent):
         self.QL_iterations = 100
         self.state = None
         self.total_rewards = 0
+        self.original_q_value = 0
+        self.s_old = None
+        self.a_old = None
+        self.reward_old = None
+        # Q-Learning Parameters
+        self.learning_rate = 0.35
+        self.discount_factor = 0.8
+        self.epsilon = 0.5 # exploration rate
 
     def reset(self, destination=None):
         self.planner.route_to(destination)
@@ -37,11 +45,9 @@ class LearningAgent(Agent):
         location = self.env.agent_states[self]['location']
         destination = self.planner.destination
         distance = self.env.compute_dist(location, destination)
-
         delta_x = destination[0] - location[0]
         delta_y = destination[1] - location[1]
         delta = (delta_x, delta_y)
-
         can_execute = False;
         if (self.next_waypoint == 'forward' and can_go_forward) or \
             (self.next_waypoint == 'left' and can_go_left) or \
@@ -49,15 +55,10 @@ class LearningAgent(Agent):
             can_execute = True
 
         # TODO: Update state
-        # TODO: can't have dict in state since it's unhashable
-        # s = (self.next_waypoint, inputs, deadline)
-        s = (self.next_waypoint, can_execute, deadline)
-        
-        # for printing the state on screen
-        self.state = "s:{}  total rewards:{}  deadline:{} ".format(s, self.total_rewards, deadline) 
-
+        s = (inputs, self.next_waypoint)
 
         # TODO: Select action according to your policy
+        # find optimal action
         Q = self.Q
         optimal_action = random.choice(Environment.valid_actions)
         q_max = 0
@@ -68,48 +69,42 @@ class LearningAgent(Agent):
                 optimal_action = a
                 q_max = Q[(s,a)]
 
+        # balance between exploration & exploitation
+        action = optimal_action if random.random() > self.epsilon else random.choice(Environment.valid_actions)
+
         # Execute action and get reward
-        action = optimal_action
         reward = self.env.act(self, action)
-        self.total_rewards += reward
 
         # TODO: Learn policy based on state, action, reward
-
-        # Q-Learning Parameters
-        self.learning_rate = 0.35
-        self.discount_factor = 0.8
-
-        # calculating optimal future value for s(t+1) used in Q learning , in this case an expected value
-        # since future state is not deterministic and could have 2^8 = 256 outcomes
-
-        total_q = {}
+        # find optimal q value
+        q_max = 0 # TODO: is 0 okay? or should it be lower
         for a in Environment.valid_actions:
-            total_q[a] = 0
             for (s_,a_) in Q.keys():
-                if s_[2] != deadline-1:
-                    pass
-                else:
-                    print "s_: {}".format(s_)
-                    total_q[a] += Q[(s_,a_)]
-            total_q[a] /= 32 # getting the expected value
+                if a == a_ and s == s_ and Q.has_key([s_,a_]) and Q[(s_,a_)] > q_max:
+                    q_max = Q[(s_,a_)]
 
-        optimal_future_value = max(total_q.values())
+        # calculating q_old using (s_old, a_old) values which are from stored from previous iteration
+        q_old = self.original_q_value if not Q.has_key((s_old,a_old)) else Q[(s_old,a_old)]
 
-        print "\n\nnext_waypoint: {}".format(self.next_waypoint)
-        # print "Q: {}".format(Q)
-        print "self.QL_iterations: {}".format(self.QL_iterations)
-        print "optimal_action: {}".format(optimal_action)
-        print "optimal_future_value: {}".format(optimal_future_value)
-
-        q_old = 0
-        if( Q.has_key((s,a)) ):
-            q_old = Q[(s,a)]
-
+        # if still in learning mode, update Q-table
         if self.QL_iterations > 0:
             self.QL_iterations -= 1
-            Q[(s, a)] = q_old + self.learning_rate * (reward + self.discount_factor * optimal_future_value - q_old)
+            Q[(s, a)] = q_old + self.learning_rate * (reward_old + self.discount_factor * q_max - q_old)
 
-        print "LearningAgent.update(): deadline = {}, inputs = {}, action = {}, reward = {}".format(deadline, inputs, action, reward)  # [debug]
+        # setting s_old, a_old, and reward_old for next iteration
+        self.s_old = s
+        self.a_old = a
+        self.reward_old = reward
+
+        # keeping track of total rewards for logging purposes
+        self.total_rewards += reward
+
+        # print logs
+        print "LearningAgent.update(): QL_iteration = {}, deadline = {}, inputs = {}, action = {}, reward = {}".format(QL_iteration, deadline, inputs, action, reward)  # [debug]
+        print "next_waypoint: {}".format(self.next_waypoint)
+        # print "Q: {}".format(Q)
+        # for printing the state on screen
+        self.state = "s:{}  total rewards:{}  deadline:{} ".format(s, self.total_rewards, deadline)
 
 
 def run():
