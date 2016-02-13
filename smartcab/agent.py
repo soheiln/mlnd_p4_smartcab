@@ -1,5 +1,5 @@
 import random
-import copy
+from collections import OrderedDict
 from environment import Agent, Environment
 from planner import RoutePlanner
 from simulator import Simulator
@@ -12,24 +12,39 @@ class LearningAgent(Agent):
         self.color = 'red'  # override color
         self.planner = RoutePlanner(self.env, self)  # simple route planner to get next_waypoint
         # TODO: Initialize any additional variables here
-        self.Q = {}
+        self.Q = OrderedDict()
         self.QL_iterations = 100
         self.state = None
         self.total_rewards = 0
         self.original_q_value = 0
         self.s_old = None
         self.a_old = None
-        self.reward_old = None
+        self.reward_old = 0
         # Q-Learning Parameters
-        self.learning_rate = 0.35
-        self.discount_factor = 0.8
-        self.epsilon = 0.5 # exploration rate
+        self.learning_rate = 0.2
+        self.discount_factor = 0.7
+        self.epsilon = self.QL_iterations / 100.0 # exploration rate
+        print "QL_iterations: {}".format(self.QL_iterations)
 
     def reset(self, destination=None):
         self.planner.route_to(destination)
+
+        # run QL_iterate() one more time to capture the reward from last step
+        self.next_waypoint = self.planner.next_waypoint()  # from route planner, also displayed by simulator
+        inputs = self.env.sense(self)
+        deadline = self.env.get_deadline(self)
+        s = (self.next_waypoint, inputs['light'], inputs['left'], inputs['right'], inputs['oncoming'])
+        self.QL_iterate(s)
+
         # TODO: Prepare for a new trip; reset any variables here, if required
         self.state = None
+        print "Totla rewards: {}".format(self.total_rewards)
         self.total_rewards = 0
+        # todo: remove
+        if self.QL_iterations == 1:
+            print "Q: {}".format(self.Q)
+        if self.QL_iterations > 0:
+            self.QL_iterations -= 1
 
     def update(self, t):
         # Gather inputs
@@ -55,8 +70,14 @@ class LearningAgent(Agent):
             can_execute = True
 
         # TODO: Update state
-        s = (inputs, self.next_waypoint)
+        s = (self.next_waypoint, inputs['light'], inputs['left'], inputs['right'], inputs['oncoming'])
+        self.state = s
 
+        # run QL_iterate step
+        self.QL_iterate(s)
+
+    def QL_iterate(self, state):
+        s = state
         # TODO: Select action according to your policy
         # find optimal action
         Q = self.Q
@@ -80,16 +101,15 @@ class LearningAgent(Agent):
         q_max = 0 # TODO: is 0 okay? or should it be lower
         for a in Environment.valid_actions:
             for (s_,a_) in Q.keys():
-                if a == a_ and s == s_ and Q.has_key([s_,a_]) and Q[(s_,a_)] > q_max:
+                if a == a_ and s == s_ and Q.has_key((s_,a_)) and Q[(s_,a_)] > q_max:
                     q_max = Q[(s_,a_)]
 
         # calculating q_old using (s_old, a_old) values which are from stored from previous iteration
-        q_old = self.original_q_value if not Q.has_key((s_old,a_old)) else Q[(s_old,a_old)]
+        q_old = self.original_q_value if not Q.has_key((self.s_old,self.a_old)) else Q[(self.s_old,self.a_old)]
 
         # if still in learning mode, update Q-table
         if self.QL_iterations > 0:
-            self.QL_iterations -= 1
-            Q[(s, a)] = q_old + self.learning_rate * (reward_old + self.discount_factor * q_max - q_old)
+            Q[(self.s_old, self.a_old)] = q_old + self.learning_rate * (self.reward_old + self.discount_factor * q_max - q_old)
 
         # setting s_old, a_old, and reward_old for next iteration
         self.s_old = s
@@ -100,11 +120,11 @@ class LearningAgent(Agent):
         self.total_rewards += reward
 
         # print logs
-        print "LearningAgent.update(): QL_iteration = {}, deadline = {}, inputs = {}, action = {}, reward = {}".format(QL_iteration, deadline, inputs, action, reward)  # [debug]
-        print "next_waypoint: {}".format(self.next_waypoint)
+        # print "LearningAgent.update(): QL_iteration = {}, deadline = {}, inputs = {}, action = {}, reward = {}".format(self.QL_iterations, deadline, inputs, action, reward)  # [debug]
+        # print "next_waypoint: {}".format(self.next_waypoint)
         # print "Q: {}".format(Q)
         # for printing the state on screen
-        self.state = "s:{}  total rewards:{}  deadline:{} ".format(s, self.total_rewards, deadline)
+        # self.state = "s:{}  total rewards:{}  deadline:{} ".format(s, self.total_rewards, deadline)
 
 
 def run():
@@ -116,8 +136,8 @@ def run():
     e.set_primary_agent(a, enforce_deadline=True)  # set agent to track
 
     # Now simulate it
-    sim = Simulator(e, update_delay=1.0)  # reduce update_delay to speed up simulation
-    sim.run(n_trials=10)  # press Esc or close pygame window to quit
+    sim = Simulator(e, update_delay=.0001)  # reduce update_delay to speed up simulation
+    sim.run(n_trials=120)  # press Esc or close pygame window to quit
 
 
 if __name__ == '__main__':
